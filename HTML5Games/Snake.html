@@ -1,0 +1,375 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Snake</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game" width="600" height="600"></canvas>
+    <div id="debug_turnpoint"></div>
+    <div id="debug_snakeCoord0"></div>
+    <div id="debug_score"></div>
+    <div id="debug_gameObj_length"></div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script>
+
+        /* Game library start */
+
+        var GameMode = {
+            NEW: 0,
+            RUNNING: 1,
+            OVER: 2,
+        };
+
+        /* Objects */
+
+        function Game(canvas, updateGame) {
+
+            var ticks = 0;
+            this.mode = GameMode.NEW;
+            this.width = canvas[0].width;
+            this.height = canvas[0].height;
+            this.getTimeInterval = function (modulo) { return Math.round(ticks % modulo) == 0; };
+
+            var timeFrame = 80;
+            var gameObjects = new Array();
+            var timeLoop = setInterval(function () { ticks++; }, timeFrame);
+            var gameLoop = setInterval(updateGame, timeFrame);
+            var paintLoop = setInterval(paintGame, timeFrame, canvas);
+
+            this.addGameObject = AddGameObject;
+            this.removeGameObject = RemoveGameObject;
+            this.end = End;
+
+            function End() {
+                gameObjects.splice(0, gameObjects.length);
+                clearInterval(gameLoop);
+            }
+
+            function AddGameObject(obj) {
+                gameObjects.push(obj);
+            }
+
+            function RemoveGameObject(obj) {
+                gameObjects.splice(gameObjects.indexOf(obj), 1);
+            }
+
+            function paintGame(canvas) {
+                clearCanvas(canvas);
+
+                var context2D = canvas[0].getContext("2d");
+
+                $.each(gameObjects, function (idx, obj) {
+                    obj.paintGameObject(canvas);
+                });
+            }
+        }
+
+        function GameObject(name, x, y, width, color, angle, data) {
+            this.name = name;
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.color = color;
+            this.angle = angle;
+            this.paintGameObject = paintGameObject;
+            this.data = data;
+
+            this.image = new Image();
+
+            function paintGameObject(canvas) {
+                var context2D = canvas[0].getContext("2d");
+                context2D.fillStyle = color;
+
+                if (this.image.src != "") {
+                    context2D.drawImage(this.image, this.x, this.y, this.width, this.width);
+                }
+                else {
+                    context2D.fillRect(this.x, this.y, this.width, this.width);
+                }
+            }
+        }
+
+        /* Methods */
+
+        function clearCanvas(canvas) {
+            var context2D = canvas[0].getContext("2d");
+            var gameHeight = canvas[0].height;
+            var gameWidth = canvas[0].width;
+
+            context2D.fillStyle = "#FFF";
+            context2D.fillRect(0, 0, gameWidth, gameHeight);
+        }
+
+        /* Game library end */
+
+        /* Game specific implementation */
+
+        var Direction = {
+            UP: 0,
+            RIGHT: 90,
+            DOWN: 180,
+            LEFT: 270,
+        }
+
+        var game;
+        var food;
+        var snake;
+        var score = 0;
+        var direction = "right";
+        var speed = 10;
+        var turnpoints = [];
+
+        var snakeJointSize = 20;
+        var foodSize = 10;
+
+        $(document).ready(function () {
+            game = new Game($("#game"), UpdateGame);
+            CreateFood();
+            CreateSnake();
+        });
+
+        // Keyboard events...
+        $(document).keydown(function (e) {
+            var key = e.which;
+
+            if (key == "37" && snake[0].angle != 90 && snake[0].angle != 270) {
+                turnpoints.push({ x: snake[0].x, y: snake[0].y, a: 270, jointsPassed: 0, tailPassed: false });
+            }
+            else if (key == "38" && (snake[0].angle != 180 && snake[0].angle != 0)) {
+                turnpoints.push({ x: snake[0].x, y: snake[0].y, a: 0, jointsPassed: 0, tailPassed: false });
+            }
+            else if (key == "39" && (snake[0].angle != 270 && snake[0].angle != 90)) {
+                turnpoints.push({ x: snake[0].x, y: snake[0].y, a: 90, jointsPassed: 0, tailPassed: false });
+            }
+            else if (key == "40" && (snake[0].angle != 0 && snake[0].angle != 180)) {
+                turnpoints.push({ x: snake[0].x, y: snake[0].y, a: 180, jointsPassed: 0, tailPassed: false });
+            }
+            else if (key == 112) {
+                e.preventDefault();
+            }
+        })
+
+        function checkGameOver() {
+            var head = snake[0];
+            // If the snakes head hits the walls...
+            if (head.x + snakeJointSize > game.width || head.x < 0 || head.y < 0 || head.y + snakeJointSize > game.height) {
+                game.end();
+                PaintSplash();
+            }
+
+            // If the snake hits it self...
+            var headCenter = { x: head.x + (snakeJointSize / 2), y: head.y + (snakeJointSize / 2) };
+            $.each(snake, function (idx, joint) {
+                if (idx > 0) {
+                    if (headCenter.x > joint.x && headCenter.x < joint.x + snakeJointSize) {
+                        if (headCenter.y > joint.y && headCenter.y < joint.y + snakeJointSize) {
+                            game.end();
+                            PaintSplash();
+                        }
+                    }
+                }
+            });
+        }
+
+        // check for snake/food collision
+        function checkSnakeEatFood() {
+            if (food.x + food.width > snake[0].x && food.x < snake[0].x + snake[0].width) {
+                if (food.y + food.width > snake[0].y && food.y < snake[0].y + snake[0].width) {
+                    game.removeGameObject(food);
+                    CreateFood();
+                    AddSnakeJoint();
+                    score += food.data.points;
+                }
+            }
+
+            $("#debug_score").html("<p>Score: " + score + "</p>");
+        }
+
+        function UpdateGame() {
+            checkGameOver();
+            checkSnakeEatFood();
+
+            if (game.getTimeInterval(40) && score > 0) {
+                score--;
+            }
+
+            // remove passed turnpoints...
+            if (turnpoints[0]) {
+                for (var idx = 0; idx < turnpoints.length; idx++) {
+                    if (turnpoints[idx].jointsPassed >= snake.length || turnpoints[idx].tailPassed) {
+                        turnpoints.splice(idx, 1);
+                    }
+                }
+            }
+            var part = "";
+            for (var idx = snake.length - 1; idx >= 0; idx--) {
+                if (idx == 0) {
+                    part = "Head";
+                }
+                else if (idx == (snake.length - 1)) {
+                    part = "Tail";
+                }
+                else {
+                    part = "Body";
+                }
+                switch (snake[idx].angle) {
+                    case 90:
+                        $.each(turnpoints, function (i, t) {
+                            if (t.x == snake[idx].x &&
+                                t.y == snake[idx].y &&
+                                t.a != snake[idx].angle) {
+
+                                snake[idx].y = t.y;
+                                snake[idx].angle = t.a;
+                                t.jointsPassed++;
+                                if (idx == (snake.length - 1)) { t.tailPassed = true; }
+                            }
+                        });
+                        snake[idx].x += speed;
+                        //snake[idx].image.src = "Snake" + part + "Right.png";
+                        break;
+                    case 270:
+                        $.each(turnpoints, function (i, t) {
+                            if (t.x == snake[idx].x &&
+                                t.y == snake[idx].y &&
+                                t.a != snake[idx].angle) {
+
+                                snake[idx].y = t.y;
+                                snake[idx].angle = t.a;
+                                t.jointsPassed++;
+                                if (idx == (snake.length - 1)) { t.tailPassed = true; }
+                            }
+                        });
+                        snake[idx].x -= speed;
+                        //snake[idx].image.src = "Snake" + part + "Left.png";
+                        break;
+                    case 0:
+                        $.each(turnpoints, function (i, t) {
+                            if (t.x == snake[idx].x &&
+                                t.y == snake[idx].y &&
+                                t.a != snake[idx].angle) {
+
+                                snake[idx].x = t.x;
+                                snake[idx].angle = t.a;
+                                t.jointsPassed++;
+                                if (idx == (snake.length - 1)) { t.tailPassed = true; }
+                            }
+                        });
+                        snake[idx].y -= speed;
+                        //snake[idx].image.src = "Snake" + part + "Up.png";
+                        break;
+                    case 180:
+                        $.each(turnpoints, function (i, t) {
+                            if (t.x == snake[idx].x &&
+                                t.y == snake[idx].y &&
+                                t.a != snake[idx].angle) {
+
+                                snake[idx].x = t.x;
+                                snake[idx].angle = t.a;
+                                t.jointsPassed++;
+                                if (idx == (snake.length - 1)) { t.tailPassed = true; }
+                            }
+                        });
+                        snake[idx].y += speed;
+                        //snake[idx].image.src = "Snake" + part + "Down.png";
+                        break;
+                }
+
+            }
+
+            if (food.x >= game.width - food.width || food.x < 0 || food.y >= game.height - food.width || food.y < 0) {
+                switch (food.angle) {
+                    case 0:
+                        food.angle = 180;
+                        break;
+                    case 90:
+                        food.angle = 270;
+                        break;
+                    case 180:
+                        food.angle = 0;
+                        break;
+                    case 270:
+                        food.angle = 90;
+                        break;
+                }
+            }
+
+            switch (food.angle) {
+                case 270:
+                    food.x -= food.data.speed;
+                    break;
+                case 180:
+                    food.y += food.data.speed;
+                    break;
+                case 90:
+                    food.x += food.data.speed;
+                    break;
+                case 0:
+                    food.y -= food.data.speed;
+                    break;
+            }
+        }
+
+        function PaintSplash() {
+            var splashOffset = { x: 60, y: 60 };
+            game.addGameObject(new GameObject("splash", splashOffset.x, splashOffset.y, game.width - (splashOffset.x * 2) - 2, "green"));
+        }
+
+
+        function CreateSnake() {
+            snake = [];
+            snake[0] = new GameObject("joint", snakeJointSize * 2, 0, snakeJointSize, "green", 90);
+            snake[1] = new GameObject("joint", snakeJointSize * 1, 0, snakeJointSize, "green", 90);
+            snake[2] = new GameObject("joint", 0, 0, snakeJointSize, "green", 90);
+
+            $.each(snake, function (idx, joint) {
+                game.addGameObject(joint);
+            });
+        }
+
+        // adds a joint to the end of the snake
+        function AddSnakeJoint() {
+
+            var tail = snake[snake.length - 1];
+            switch (tail.angle) {
+                case 0:
+                    var newJoint = new GameObject("joint", tail.x, tail.y + snakeJointSize, snakeJointSize, "green", tail.angle);
+                    snake.push(newJoint);
+                    game.addGameObject(newJoint);
+                    break;
+                case 90:
+                    var newJoint = new GameObject("joint", tail.x - snakeJointSize, tail.y, snakeJointSize, "green", tail.angle);
+                    snake.push(newJoint);
+                    game.addGameObject(newJoint);
+                    break;
+                case 180:
+                    var newJoint = new GameObject("joint", tail.x, tail.y - snakeJointSize, snakeJointSize, "green", tail.angle);
+                    snake.push(newJoint);
+                    game.addGameObject(newJoint);
+                    break;
+                case 270:
+                    var newJoint = new GameObject("joint", tail.x + snakeJointSize, tail.y, snakeJointSize, "green", tail.angle);
+                    snake.push(newJoint);
+                    game.addGameObject(newJoint);
+                    break;
+            }
+
+        }
+
+        function CreateFood() {
+            var x = Math.round(Math.random() * (game.width - foodSize));
+            var y = Math.round(Math.random() * (game.height - foodSize));
+            var a = 0;
+
+            food = new GameObject("food", x, y, foodSize, "brown", a, { points: 10, speed: 0 });
+            game.addGameObject(food);
+        }
+
+    </script>
+</body>
+</html>
